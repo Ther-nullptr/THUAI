@@ -8,6 +8,7 @@ extern const bool asynchronous = true;
 #include <iostream>
 #include <ctime>
 #include <chrono>
+#include <string>
 
 #define PI 3.1415926
 #define CELL 1000 //网格尺寸
@@ -309,6 +310,7 @@ void AI::play(GameApi& g)
 					enemyPositionX = (*i)->x;
 					enemyPositionY = (*i)->y;
 					enemyHP = (*i)->hp;
+					g.Send(1, std::to_string(enemyPositionX)+","+std::to_string(enemyPositionY)+","+std::to_string(enemyHP));
 					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
 					if (enemyHP <= 2 * attackforce)//残血敌人一击必杀
 					{
