@@ -9,6 +9,7 @@ extern const bool asynchronous = true;
 #include <ctime>
 #include <chrono>
 #include <string>
+#include <cmath>
 
 #define PI 3.1415926
 #define CELL 1000 //网格尺寸
@@ -52,6 +53,7 @@ static unsigned int directionValue = 0;
 
 //个人信息
 static uint16_t myID;//ID
+static uint32_t myGUID;
 uint16_t lifeNum;//生命数 //TODO
 uint32_t hp;//健康值 //TODO
 uint16_t bulletNum;//子弹数
@@ -79,12 +81,16 @@ static bool wallinfo[50][50] = { 0 };//用数组存储墙的信息
 uint32_t score;
 
 #ifdef MOVEMODE2
-enum mydirection
+enum class mydirection
 {
 	right,
 	down,
 	left,
-	up
+	up,
+	leftup,
+	leftdown,
+	rightup,
+	rightdown
 };
 static mydirection d = mydirection::right;
 #endif
@@ -102,6 +108,12 @@ inline double getDirection(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uin
 	return direction;
 }
 
+//计算距离
+inline double getDistance(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint32_t aimPositionX, uint32_t aimPositionY)
+{
+	return sqrt((aimPositionX - selfPoisitionX) * (aimPositionX - selfPoisitionX) + (aimPositionY - selfPoisitionY) * (aimPositionY - selfPoisitionY));
+}
+
 //将绝对坐标转化为方格坐标
 inline uint32_t getCellPosition(uint32_t t)
 {
@@ -109,10 +121,11 @@ inline uint32_t getCellPosition(uint32_t t)
 }
 
 //去向目标点
-inline void gotoxy(GameApi& g, uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint32_t aimPositionX, uint32_t aimPositionY)
+inline void gotoxy(GameApi& g, uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint32_t aimPositionX, uint32_t aimPositionY, uint32_t movespeed)
 {
 	double direction = getDirection(selfPoisitionX, selfPoisitionY, aimPositionX, aimPositionY);
-	g.MovePlayer(MOVETIME_DIRECTION, direction);
+	double distance = getDistance(selfPoisitionX, selfPoisitionY, aimPositionX, aimPositionY);
+	g.MovePlayer(1000 * distance / movespeed, direction);
 }
 
 //计算两个坐标是否属于同一个cell
@@ -163,9 +176,9 @@ inline void gotoProps(GameApi& g, bool wallinfo[50][50], uint32_t selfPositionX,
 	}
 	if (moveflag)
 	{
-		gotoxy(g, selfPositionX, selfPositionY, PropX, PropY);
+		gotoxy(g, selfPositionX, selfPositionY, PropX, PropY,movespeed);
 	}
-	label:;
+label:;
 }
 //当没有墙时,按照下面的指令进行移动
 
@@ -228,6 +241,7 @@ void AI::play(GameApi& g)
 		// 获取自身信息部分,供之后决策判断
 		auto selfinfo = g.GetSelfInfo();
 		myID = selfinfo->teamID;
+		myGUID = selfinfo->guid;
 		lifeNum = selfinfo->lifeNum;//获取生命数 //TODO
 		hp = selfinfo->hp;//获取健康值 //TODO
 		bulletNum = selfinfo->bulletNum;//获取子弹数
@@ -235,8 +249,10 @@ void AI::play(GameApi& g)
 		selfPositionY = selfinfo->y;//获取自身坐标
 		isdying = selfinfo->isDying;
 		attackforce = selfinfo->ap;
+		movespeed = selfinfo->moveSpeed;
+		auto myproptype = selfinfo->propType;
 
-		auto color = g.GetSelfTeamColor();//返回本队的颜色
+		static auto color = g.GetSelfTeamColor();//返回本队的颜色
 
 		// 便于监测,后续可以删掉
 		std::cout << selfPositionX << ' ' << selfPositionY << std::endl;
@@ -295,6 +311,10 @@ void AI::play(GameApi& g)
 			{
 				gotoProps(g, wallinfo, selfPositionX, selfPositionY, propX, propY);
 			}
+			if (myproptype != THUAI4::PropType::Null)
+			{
+				g.Use();
+			}
 		}
 
 		// 获取周围玩家的坐标,并做出决策
@@ -310,10 +330,11 @@ void AI::play(GameApi& g)
 					enemyPositionX = (*i)->x;
 					enemyPositionY = (*i)->y;
 					enemyHP = (*i)->hp;
-					g.Send(1, std::to_string(enemyPositionX)+","+std::to_string(enemyPositionY)+","+std::to_string(enemyHP));
+					g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
 					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
-					if (enemyHP <= 2 * attackforce)//残血敌人一击必杀
+					if (enemyHP <= 3 * attackforce)//残血敌人一击必杀
 					{
+						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
 						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
 						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
 					}
@@ -331,6 +352,23 @@ void AI::play(GameApi& g)
 					}
 					g.MovePlayer(MOVETIME_ESCAPE / 4, direction(e));//加入随机速度,防止子弹打到自己
 					//!这部分有不合适的地方,容易被墙堵住
+				}
+				else if ((*i)->guid != myGUID)//发现友军,也尽量远离,防止敌人一并歼灭或造成阻塞
+				{
+					teammatePositionX = (*i)->x;
+					teammatePositionY = (*i)->y;
+					if (getDistance(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY) <= 1.2 * CELL)
+					{
+						teammateDirection = getDirection(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY);
+						if (teammateDirection < PI)
+						{
+							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection + PI);
+						}
+						else
+						{
+							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection - PI);
+						}
+					}
 				}
 			}
 		}
@@ -377,6 +415,7 @@ void AI::play(GameApi& g)
 		cellY = getCellPosition(selfPositionY);
 		bulletNum = selfinfo->bulletNum;
 		int uncoloredplaces = 0;
+		uint32_t myteamCellX = 0, myteamCellY = 0;
 		for (int i = getValidPosition(int(cellX - 2)); i <= getValidPosition(int(cellX + 2)); i++)
 		{
 			for (int j = getValidPosition(int(cellY - 2)); j <= getValidPosition(int(cellY + 2)); j++)
@@ -394,9 +433,9 @@ void AI::play(GameApi& g)
 			}
 		}
 		std::cout << uncoloredplaces << std::endl;
-		if ((uncoloredplaces >= 20 && bulletNum >= 5) || (uncoloredplaces >= 10 && bulletNum >= 10) || bulletNum >= 13)//对子弹数量和未染色区域进行权衡
+		if ((uncoloredplaces >= 20 && bulletNum >= 4) || (uncoloredplaces >= 10 && bulletNum >= 10) || bulletNum >= 13)//对子弹数量和未染色区域进行权衡
 		{
-			#ifdef MOVEMODE2 
+#ifdef MOVEMODE2 
 			switch (d)
 			{
 			case right:
@@ -412,15 +451,15 @@ void AI::play(GameApi& g)
 				g.Attack(BULLET_COLOR, 0.5 * PI);
 				break;
 			}
-			#endif
+#endif
 
-			#ifdef MOVEMODE1
+#ifdef MOVEMODE1
 			g.Attack(1, direction(e));
-			#endif		
+#endif		
 		}
-		if (bulletNum < 5)//子弹不够,就去己方占领区补给
+		if (bulletNum < 4)//子弹不够,就去己方占领区补给
 		{
-			gotoxy(g, selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500);
+			gotoxy(g, selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500,movespeed);
 		}
 
 
