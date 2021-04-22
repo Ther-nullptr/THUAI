@@ -18,6 +18,24 @@ namespace
 	[[maybe_unused]] std::default_random_engine e{ std::random_device{}() };
 }
 
+//宏
+#define PI 3.1415926
+#define CELL 1000 // 网格尺寸
+#define ASCIICHANGE 48 // ASCII校准值
+
+#define MOVETIME_PROPS 1000//拿道具的速度
+#define MOVETIME_WALLS 300 //躲墙的速度
+#define MOVETIME_ENEMY 600 //躲敌人的速度
+#define MOVETIME_ESCAPE 1000 //躲敌方子弹的速度
+#define MOVETIME_RANDOM 400 //随机游走的速度
+#define MOVETIME_DIRECTION 300 //定向移动速度
+#define MOVETIME_BIRTHPOINTS 400 //躲出生点的速度
+#define BULLET_ATTACK 700 //攻击时子弹的飞行速度
+#define BULLET_COLOR 200 //染色时子弹的飞行速度
+
+#define BIRTHPOINTX 2500
+#define BIRTHPOINTY 3500//猴子的出生点(实际上以后猴子就不会动了)
+
 //个人信息
 static uint16_t MmyID;//ID
 uint16_t MlifeNum;//生命数 //TODO
@@ -32,7 +50,10 @@ bool Misdying;//人物是否死亡
 const uint32_t MbulletSpeed = 24;
 uint32_t bulletPositionX;
 uint32_t bulletPositionY;
-double bulletDirection, characterBulletDirection;
+double bulletDirection, characterBulletDirection,characterBulletDistance, shootDirection, shootPosition;
+
+//敌人信息
+uint32_t enemyPositionX, enemyPositionY, enemyHP;
 
 //障碍物信息
 uint32_t wallx;
@@ -51,6 +72,7 @@ inline double getDirection(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uin
 	return direction;
 }
 
+//计算距离函数
 inline double getDistance(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint32_t aimPositionX, uint32_t aimPositionY)
 {
 	return sqrt((aimPositionX - selfPoisitionX) * (aimPositionX - selfPoisitionX) + (aimPositionY - selfPoisitionY) * (aimPositionY - selfPoisitionY));
@@ -65,10 +87,18 @@ void AI::play(GameApi& g)
 	MselfPositionY = self->y;
 	MmyID = self->teamID;
 
+	//猴子对道具的拾取
+	auto props = g.GetProps();
+	if (props.size() != 0)
+	{
+		g.Pick(props[0]->propType);
+	}
+	g.Use();
+
 	//队友发来的信息获取
 	std::string buffer("empty");
 	bool whethershoot = false;
-	int rivalx = 0, rivaly= 0, rivalchp=0;
+	int rivalx = 0, rivaly = 0, rivalchp = 0;
 	if (g.MessageAvailable())
 	{
 		if (g.TryGetMessage(buffer))
@@ -83,17 +113,17 @@ void AI::play(GameApi& g)
 					if (flag == 0)
 					{
 						rivalx *= 10;
-						rivalx += (buffer[i] - 48);
+						rivalx += (buffer[i] - ASCIICHANGE);
 					}
 					if (flag == 1)
 					{
 						rivaly *= 10;
-						rivaly += (buffer[i] - 48);
+						rivaly += (buffer[i] - ASCIICHANGE);
 					}
 					if (flag == 2)
 					{
 						rivalchp *= 10;
-						rivalchp += (buffer[i] - 48);
+						rivalchp += (buffer[i] - ASCIICHANGE);
 					}
 				}
 			}
@@ -104,19 +134,21 @@ void AI::play(GameApi& g)
 			std::cout << " cannot get message" << std::endl;
 		}
 	}
+
 	//猴子的打击
 	if (whethershoot)
 	{
 		double attackangle = getDirection(MselfPositionX, MselfPositionY, rivalx, rivaly);
 		double attackdistance = getDistance(MselfPositionX, MselfPositionY, rivalx, rivaly);
-		std::cout << attackangle <<' '<<attackdistance << std::endl;
+		std::cout << attackangle << ' ' << attackdistance << std::endl;
 		if (MbulletNum > 1 && rivalchp > 0)
 		{
-			g.Attack(attackdistance/MbulletSpeed, attackangle);
+			g.Attack(attackdistance / MbulletSpeed, attackangle);
 			//rivalchp -= 3000;
 		}
 	}
-	//猴子躲避函数
+
+	//猴子遇到敌人时的决策
 	auto bullets = g.GetBullets();
 	if (bullets.size() != 0)
 	{
@@ -127,31 +159,39 @@ void AI::play(GameApi& g)
 				bulletPositionX = (*i)->x;
 				bulletPositionY = (*i)->y;
 				characterBulletDirection = getDirection(MselfPositionX, MselfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
-				if (bulletDirection <= PI)//向垂直方向躲子弹
+				characterBulletDistance = getDistance(MselfPositionX, MselfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
+				if (MbulletNum >= 3)//对子弹进行拦截
 				{
-					if (fabs(bulletDirection + PI - characterBulletDirection) <= PI * 0.1)
-						g.MovePlayer(1000, PI / 2 + bulletDirection);
-				}
-				else
-				{
-					if (fabs(bulletDirection - PI - characterBulletDirection) <= PI * 0.1)
-						g.MovePlayer(1000, bulletDirection - PI * 0.5);
+					g.Attack(characterBulletDistance / MbulletSpeed, characterBulletDirection);
 				}
 			}
 		}
 	}
-	//遇到墙体时的移动
-	auto walls = g.GetWalls();
-	if (walls.size() != 0)
+
+	//自身附近遭到敌人时
+	auto characters = g.GetCharacters();
+	if (characters.size() > 1)//如果周围除自己以外还有人
 	{
-		for (auto i = walls.begin(); i != walls.end(); i++)
+		for (auto i = characters.begin(); i != characters.end(); i++)
 		{
-			wallx = (*i)->x;
-			wally = (*i)->y;
-			if (Mmovedirection == getDirection(MselfPositionX, MselfPositionY, wallx, wally))
+			MselfPositionX = self->x;
+			MselfPositionY = self->y;
+			if ((*i)->teamID != MmyID)//发现敌军
 			{
-				Mmovedirection -= PI * 0.5;
-				g.MovePlayer(1000, Mmovedirection);
+				enemyPositionX = (*i)->x;
+				enemyPositionY = (*i)->y;
+				enemyHP = (*i)->hp;
+				shootDirection = getDirection(MselfPositionX, MselfPositionY, enemyPositionX, enemyPositionY);
+				shootPosition = getDistance(MselfPositionX, MselfPositionY, enemyPositionX, enemyPositionY);
+				if (enemyHP <= 2 * 3000)//残血敌人一击必杀
+				{
+					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
+					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
+				}
+				else//如果不能一击必杀,就打消耗战
+				{
+					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
+				}
 			}
 		}
 	}
