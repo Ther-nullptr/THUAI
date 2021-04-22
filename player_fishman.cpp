@@ -29,6 +29,8 @@ extern const bool asynchronous = true;
 #define MIN BIRTHPOINT1 // 
 #define MAX BIRTHPOINT2 // 
 #define MIDDLE 25*CELL
+#define MONKEYX 2500
+#define MONKEYY 3500
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 
@@ -89,7 +91,11 @@ enum class mydirection
 	right,
 	down,
 	left,
-	up
+	up,
+	leftup,
+	leftdown,
+	rightup,
+	rightdown
 };
 static mydirection d = mydirection::right;
 #endif
@@ -249,8 +255,8 @@ void AI::play(GameApi& g)
 		isdying = selfinfo->isDying;
 		attackforce = selfinfo->ap;
 		movespeed = selfinfo->moveSpeed;
-
-		auto color = g.GetSelfTeamColor();//返回本队的颜色
+		auto myproptype = selfinfo->propType;
+		static auto color = g.GetSelfTeamColor();//返回本队的颜色
 
 		// 便于监测,后续可以删掉
 		std::cout << selfPositionX << ' ' << selfPositionY << std::endl;
@@ -300,16 +306,34 @@ void AI::play(GameApi& g)
 			{
 				THUAI4::PropType Type = props[0]->propType;//获取道具类型
 				std::cout << int(Type) << std::endl;
+				
 				for (int i = 0; i < 20; i++)//尝试捡20次
 				{
 					g.Pick(props[0]->propType);
-					g.Use();
 				}
-				
 			}
 			else//附近有道具,进行移动
 			{
 				gotoProps(g, wallinfo, selfPositionX, selfPositionY, propX, propY);
+			}
+			switch (myproptype)
+			{
+			case THUAI4::PropType::Null:
+				break;
+			case THUAI4::PropType::JinKeLa:
+			case THUAI4::PropType::Rice:
+			case THUAI4::PropType::NegativeFeedback:
+			case THUAI4::PropType::Totem:
+			case THUAI4::PropType::Dirt:
+			case THUAI4::PropType::Attenuator:
+			case THUAI4::PropType::Divider:
+				g.Use();
+				break;
+			default:
+				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX,MONKEYY);
+				auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
+				g.Throw(propDistance / 8, propDirection);
+				break;
 			}
 		}
 
@@ -732,25 +756,6 @@ void AI::play(GameApi& g)
 		std::cout << "score:" << score << std::endl;
 	}
 
-
-
-	for (int i = 0; i < 50; i++)
-	{
-		for (int j = 0; j < 50; j++)
-		{
-			if (wallinfo[i][j] == 1)
-			{
-				std::cout << 'O';
-			}
-			else
-			{
-				std::cout << ' ';
-			}
-		}
-		std::cout << std::endl;
-	}
 	//清屏,可选
 	//system("cls");
-
-
 }
