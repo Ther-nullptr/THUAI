@@ -29,8 +29,11 @@ extern const bool asynchronous = true;
 #define MIN BIRTHPOINT1 // 
 #define MAX BIRTHPOINT2 // 
 #define MIDDLE 25*CELL
-#define MONKEYX 2500
-#define MONKEYY 3500
+#define ASCIICHANGE 48;
+
+//monkey坐标
+static uint32_t MONKEYX = 0;
+static uint32_t MONKEYY = 0;
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 
@@ -234,6 +237,35 @@ inline void moveWithoutWalls(GameApi& g, mydirection d)
 
 void AI::play(GameApi& g)
 {
+	//得到猴子发来的坐标信息
+	if (g.MessageAvailable())
+	{
+		std::string buffer("empty");
+		if (g.TryGetMessage(buffer))
+		{
+			int flag = 0;
+			for (std::string::size_type i = 0; i != buffer.size(); i++)
+			{
+				if (buffer[i] == ',')
+					flag++;
+				else
+				{
+					if (flag == 0)
+					{
+						MONKEYX *= 10;
+						MONKEYX += (buffer[i] - 48);
+					}
+					if (flag == 1)
+					{
+						MONKEYY *= 10;
+						MONKEYY += (buffer[i] - 48);
+					}
+				}
+			}
+		}
+		else
+			std::cout << "cannot get message2" << std::endl;
+	}
 	// 计时
 	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
 		(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -306,7 +338,7 @@ void AI::play(GameApi& g)
 			{
 				THUAI4::PropType Type = props[0]->propType;//获取道具类型
 				std::cout << int(Type) << std::endl;
-				
+
 				for (int i = 0; i < 20; i++)//尝试捡20次
 				{
 					g.Pick(props[0]->propType);
@@ -330,7 +362,7 @@ void AI::play(GameApi& g)
 				g.Use();
 				break;
 			default:
-				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX,MONKEYY);
+				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
 				auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
 				g.Throw(propDistance / 8, propDirection);
 				break;
@@ -460,7 +492,7 @@ void AI::play(GameApi& g)
 		{
 			shootPositionX = selfPositionX;//更新当前发射子弹的位置
 			shootPositionY = selfPositionY;
-			if (bulletNum >= 2 && uncoloredplaces >15)
+			if (bulletNum >= 2 && uncoloredplaces > 15)
 			{
 				bulletDirection = getDirection(selfPositionX, selfPositionY, MIDDLE, MIDDLE);
 				g.Attack(BULLET_COLOR, bulletDirection);
@@ -469,7 +501,7 @@ void AI::play(GameApi& g)
 		else if (bulletNum < 2)//子弹不够,就去己方占领区补给
 		{
 			std::cout << "myteamcell" << myteamCellX << ',' << myteamCellY << std::endl;
-			gotoProps(g, wallinfo, selfPositionX, selfPositionY, myteamCellX* CELL + 500, myteamCellY* CELL + 500);
+			gotoProps(g, wallinfo, selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500);
 		}
 
 
