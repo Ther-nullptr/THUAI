@@ -354,6 +354,15 @@ void AI::play(GameApi& g)
 					//g.Send(1, std::to_string(enemyPositionX)+","+std::to_string(enemyPositionY)+","+std::to_string(enemyHP));
 					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
 					g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+					if (hp < 500)//这种状态下可以判定AI即将被击杀,那么AI会将所有的子弹射出
+					{
+						//这段代码有风险!!
+						while (bulletNum > 0)
+						{
+							g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+							bulletNum--;
+						}
+					}
 					if (shootDirection < 1.5 * PI)//向垂直方向逃跑
 					{
 						g.MovePlayer(MOVETIME_ESCAPE, PI * 0.5 + shootDirection);
