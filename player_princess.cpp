@@ -21,6 +21,7 @@ extern const bool asynchronous = true;
 #define MOVETIME_BIRTHPOINTS 400 //躲出生点的速度
 #define BULLET_ATTACK 700 //攻击时子弹的飞行速度
 #define BULLET_COLOR 200 //染色时子弹的飞行速度
+#define BULLET_SPEED 6
 
 #define BIRTHPOINT1 2 // 改变方向所用的参考值
 #define BIRTHPOINT2 47 // 
@@ -71,7 +72,7 @@ double shootDirection, shootDistance,teammateDirection;
 
 //子弹信息
 uint32_t bulletPositionX, bulletPositionY;
-double bulletDirection, characterBulletDirection;
+double bulletDirection, characterBulletDirection,characterBulletDistance;
 
 //地图信息
 uint32_t cellX, cellY, wallX, wallY, birthpointX, birthpointY, myteamCellX, myteamCellY;
@@ -344,7 +345,7 @@ void AI::play(GameApi& g)
 					enemyPositionX = (*i)->x;
 					enemyPositionY = (*i)->y;
 					enemyHP = (*i)->hp;
-					g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
+					//g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
 					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
 #ifdef ATTACKMODE1
 					if (enemyHP <= 3 * attackforce)//残血敌人一击必杀
@@ -358,6 +359,15 @@ void AI::play(GameApi& g)
 						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
 					}
 					g.MovePlayer(MOVETIME_ESCAPE / 4, shootDirection);//追着敌人打
+					if (hp < 2000)//这种状态下可以判定AI即将被击杀,那么AI会将所有的子弹射出
+					{
+						//这段代码有风险!!
+						while (bulletNum > 0)
+						{
+							g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+							bulletNum--;
+						}
+					}
 #endif // ATTACKMODE1
 
 #ifdef ATTACKMODE2
@@ -401,6 +411,9 @@ void AI::play(GameApi& g)
 					bulletDirection = (*i)->facingDirection;
 					std::cout << bulletDirection << std::endl;
 					characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
+					characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
+					g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
+					/*
 					if (bulletDirection <= PI)//向垂直方向躲子弹
 					{
 						if (fabs(bulletDirection + PI - characterBulletDirection) <= PI * 0.1)
@@ -417,6 +430,7 @@ void AI::play(GameApi& g)
 							g.MovePlayer(MOVETIME_ESCAPE, bulletDirection - PI * 0.5);
 						}
 					}
+					*/
 				}
 			}
 		}
@@ -445,7 +459,7 @@ void AI::play(GameApi& g)
 			}
 		}
 		std::cout << uncoloredplaces << std::endl;
-		if ((uncoloredplaces >= 20 && bulletNum >= 5) || (uncoloredplaces >= 10 && bulletNum >= 10) || bulletNum >= 13)//对子弹数量和未染色区域进行权衡
+		if ((uncoloredplaces >= 20 && bulletNum >= 7) || (uncoloredplaces >= 15 && bulletNum >= 11)||bulletNum>=13)//对子弹数量和未染色区域进行权衡
 		{
 #ifdef MOVEMODE2 
 			switch (d)
@@ -469,7 +483,7 @@ void AI::play(GameApi& g)
 			g.Attack(1, direction(e));
 #endif		
 		}
-		if (bulletNum < 5)//子弹不够,就去己方占领区补给
+		if (bulletNum < 4)//子弹不够,就去己方占领区补给
 		{
 			gotoProps(g, wallinfo,selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500);
 		}
