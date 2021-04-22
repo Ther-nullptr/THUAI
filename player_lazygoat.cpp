@@ -23,11 +23,12 @@ extern const bool asynchronous = true;
 #define MOVETIME_BIRTHPOINTS 400 //躲出生点的速度
 #define BULLET_ATTACK 700 //攻击时子弹的飞行速度
 #define BULLET_COLOR 200 //染色时子弹的飞行速度
+#define BULLET_SPEED 3
 
 #define BIRTHPOINT1 1 // 改变方向所用的参考值
 #define BIRTHPOINT2 48 // 
 #define MIN BIRTHPOINT1 // 
-#define MAX BIRTHPOINT2 // 
+#define MAX BIRTHPOINT2 //
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 
@@ -70,7 +71,7 @@ double shootDirection, teammateDirection;
 
 //子弹信息
 uint32_t bulletPositionX, bulletPositionY;
-double bulletDirection, characterBulletDirection;
+double bulletDirection, characterBulletDirection,characterBulletDistance;
 
 //地图信息
 uint32_t cellX, cellY, wallX, wallY, birthpointX, birthpointY, myteamCellX, myteamCellY;
@@ -160,9 +161,9 @@ inline void gotoProps(GameApi& g, bool wallinfo[50][50], uint32_t selfPositionX,
 {
 	bool moveflag = 1;
 	uint32_t maxX = (selfPositionX < PropX ? PropX : selfPositionX);
-	uint32_t maxY = (selfPositionY < PropY ? PropY : selfPositionX);
+	uint32_t maxY = (selfPositionY < PropY ? PropY : selfPositionY);
 	uint32_t minX = (selfPositionX > PropX ? PropX : selfPositionX);
-	uint32_t minY = (selfPositionY > PropY ? PropY : selfPositionX);
+	uint32_t minY = (selfPositionY > PropY ? PropY : selfPositionY);
 	for (int i = getCellPosition(minX); i <= getCellPosition(maxX); i++)
 	{
 		for (int j = getCellPosition(minY); j <= getCellPosition(maxY); j++)
@@ -330,7 +331,7 @@ void AI::play(GameApi& g)
 					enemyPositionX = (*i)->x;
 					enemyPositionY = (*i)->y;
 					enemyHP = (*i)->hp;
-					g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
+					//g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
 					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
 					if (enemyHP <= 3 * attackforce)//残血敌人一击必杀
 					{
@@ -341,6 +342,15 @@ void AI::play(GameApi& g)
 					else//如果不能一击必杀,就打消耗战
 					{
 						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+					}
+					if (hp < 1000)//这种状态下可以判定AI即将被击杀,那么AI会将所有的子弹射出
+					{
+						//这段代码有风险!!
+						while (bulletNum > 0)
+						{
+							g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+							bulletNum--;
+						}
 					}
 					if (shootDirection < 1.5 * PI)//向垂直方向逃跑
 					{
@@ -388,22 +398,8 @@ void AI::play(GameApi& g)
 					bulletDirection = (*i)->facingDirection;
 					std::cout << bulletDirection << std::endl;
 					characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
-					if (bulletDirection <= PI)//向垂直方向躲子弹
-					{
-						if (fabs(bulletDirection + PI - characterBulletDirection) <= PI * 0.1)
-						{
-							std::cout << "escape!" << std::endl;
-							g.MovePlayer(MOVETIME_ESCAPE, PI / 2 + bulletDirection);
-						}
-					}
-					else
-					{
-						if (fabs(bulletDirection - PI - characterBulletDirection) <= PI * 0.1)
-						{
-							std::cout << "escape!" << std::endl;
-							g.MovePlayer(MOVETIME_ESCAPE, bulletDirection - PI * 0.5);
-						}
-					}
+					characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
+					g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
 				}
 			}
 		}
