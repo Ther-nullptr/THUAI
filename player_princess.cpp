@@ -27,8 +27,6 @@ extern const bool asynchronous = true;
 #define BIRTHPOINT2 47 // 
 #define MIN BIRTHPOINT1 // 
 #define MAX BIRTHPOINT2 // 
-#define MONKEYX 2500
-#define MONKEYY 3500
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 #define ATTACKMODE1
@@ -230,6 +228,39 @@ inline void moveWithoutWalls(GameApi& g, mydirection d)
 
 void AI::play(GameApi& g)
 {
+	uint32_t MONKEYX = 0;
+	uint32_t MONKEYY = 0;
+	//得到猴子发来的坐标信息
+	if (g.MessageAvailable())
+	{
+		std::string buffer("empty");
+		if (g.TryGetMessage(buffer))
+		{
+			int flag = 0;
+			for (std::string::size_type i = 0; i != buffer.size(); i++)
+			{
+				if (buffer[i] == ',')
+					flag++;
+				else
+				{
+					if (flag == 0)
+					{
+						MONKEYX *= 10;
+						MONKEYX += (buffer[i] - 48);
+					}
+					if (flag == 1)
+					{
+						MONKEYY *= 10;
+						MONKEYY += (buffer[i] - 48);
+					}
+				}
+			}
+			std::cout << "MONKEY:" << MONKEYX << ',' << MONKEYY << std::endl;
+		}
+		else
+			std::cout << "cannot get message2" << std::endl;
+	}
+
 	// 计时
 	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
 		(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -252,7 +283,6 @@ void AI::play(GameApi& g)
 		movespeed = selfinfo->moveSpeed;
 		myGUID = selfinfo->guid;
 		auto myproptype = selfinfo->propType;
-
 		auto color = g.GetSelfTeamColor();//返回本队的颜色
 
 		// 便于监测,后续可以删掉
@@ -297,25 +327,23 @@ void AI::play(GameApi& g)
 			selfPositionY = selfinfo->y;
 			cellX = getCellPosition(selfPositionX);
 			cellY = getCellPosition(selfPositionY);
-			uint32_t propX = props[0]->x, propY = props[0]->y;// 先捡一个,不要贪多
-			std::cout << propX << ' ' << propY << std::endl;
-			if ((cellX == getCellPosition(propX)) && (cellY == getCellPosition(propY)))//如果就在脚下,直接捡起来就好了
+			for (auto i = props.begin(); i != props.end(); i++)
 			{
-				THUAI4::PropType Type = props[0]->propType;//获取道具类型
-				std::cout << int(Type) << std::endl;
-				for (int i = 0; i < 20; i++)//尝试捡20次
+				if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
 				{
-					g.Pick(props[0]->propType);
+					g.Pick((*i)->propType);
+				}
+				else//附近有道具,进行移动
+				{
+					gotoProps(g, wallinfo, selfPositionX, selfPositionY, (*i)->x, (*i)->y);
 				}
 			}
-			else//附近有道具,进行移动
-			{
-				gotoProps(g, wallinfo, selfPositionX, selfPositionY, propX, propY);
-			}
+			auto myproptype = selfinfo->propType;
 			switch (myproptype)
 			{
 			case THUAI4::PropType::Null:
 				break;
+
 			case THUAI4::PropType::Rice:
 			case THUAI4::PropType::NegativeFeedback:
 			case THUAI4::PropType::Totem:
@@ -324,6 +352,7 @@ void AI::play(GameApi& g)
 			case THUAI4::PropType::Divider:
 				g.Use();
 				break;
+
 			default:
 				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
 				auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
@@ -378,19 +407,21 @@ void AI::play(GameApi& g)
 #endif // ATTACKMODE2
 
 				}
-				else if ((*i)->guid != myGUID)//发现友军,也尽量远离,防止敌人一并歼灭或造成阻塞
-				teammatePositionX = (*i)->x;
-				teammatePositionY = (*i)->y;
-				if (getDistance(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY) <= 1.2 * CELL)
-				{
-					teammateDirection = getDirection(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY);
-					if (teammateDirection < PI)
+				else if ((*i)->guid != myGUID)
+				{//发现友军,也尽量远离,防止敌人一并歼灭或造成阻塞
+					teammatePositionX = (*i)->x;
+					teammatePositionY = (*i)->y;
+					if (getDistance(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY) <= 1.2 * CELL)
 					{
-						g.MovePlayer(MOVETIME_ESCAPE, teammateDirection + PI);
-					}
-					else
-					{
-						g.MovePlayer(MOVETIME_ESCAPE, teammateDirection - PI);
+						teammateDirection = getDirection(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY);
+						if (teammateDirection < PI)
+						{
+							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection + PI);
+						}
+						else
+						{
+							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection - PI);
+						}
 					}
 				}
 			}
@@ -413,24 +444,6 @@ void AI::play(GameApi& g)
 					characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
 					characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
 					g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
-					/*
-					if (bulletDirection <= PI)//向垂直方向躲子弹
-					{
-						if (fabs(bulletDirection + PI - characterBulletDirection) <= PI * 0.1)
-						{
-							std::cout << "escape!" << std::endl;
-							g.MovePlayer(MOVETIME_ESCAPE, PI / 2 + bulletDirection);
-						}
-					}
-					else
-					{
-						if (fabs(bulletDirection - PI - characterBulletDirection) <= PI * 0.1)
-						{
-							std::cout << "escape!" << std::endl;
-							g.MovePlayer(MOVETIME_ESCAPE, bulletDirection - PI * 0.5);
-						}
-					}
-					*/
 				}
 			}
 		}
