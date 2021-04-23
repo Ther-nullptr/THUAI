@@ -32,8 +32,7 @@ extern const bool asynchronous = true;
 #define ASCIICHANGE 48;
 
 //monkey坐标
-static uint32_t MONKEYX = 0;
-static uint32_t MONKEYY = 0;
+
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 
@@ -188,8 +187,8 @@ inline void gotoProps(GameApi& g, bool wallinfo[50][50], uint32_t selfPositionX,
 	}
 label:;
 }
-//当没有墙时,按照下面的指令进行移动
 
+//当没有墙时,按照下面的指令进行移动
 #ifdef MOVEMODE1
 inline void moveWithoutWalls(GameApi& g, bool move_to_left, bool move_to_up, unsigned int directionFlag)
 {
@@ -237,6 +236,8 @@ inline void moveWithoutWalls(GameApi& g, mydirection d)
 
 void AI::play(GameApi& g)
 {
+	uint32_t MONKEYX = 0;
+	uint32_t MONKEYY = 0;
 	//得到猴子发来的坐标信息
 	if (g.MessageAvailable())
 	{
@@ -262,10 +263,12 @@ void AI::play(GameApi& g)
 					}
 				}
 			}
+			std::cout << "MONKEY:" << MONKEYX << ',' << MONKEYY << std::endl;
 		}
 		else
 			std::cout << "cannot get message2" << std::endl;
 	}
+
 	// 计时
 	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
 		(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -287,7 +290,6 @@ void AI::play(GameApi& g)
 		isdying = selfinfo->isDying;
 		attackforce = selfinfo->ap;
 		movespeed = selfinfo->moveSpeed;
-		auto myproptype = selfinfo->propType;
 		static auto color = g.GetSelfTeamColor();//返回本队的颜色
 
 		// 便于监测,后续可以删掉
@@ -332,26 +334,23 @@ void AI::play(GameApi& g)
 			selfPositionY = selfinfo->y;
 			cellX = getCellPosition(selfPositionX);
 			cellY = getCellPosition(selfPositionY);
-			uint32_t propX = props[0]->x, propY = props[0]->y;// 先捡一个,不要贪多
-			std::cout << propX << ' ' << propY << std::endl;
-			if ((cellX == getCellPosition(propX)) && (cellY == getCellPosition(propY)))//如果就在脚下,直接捡起来就好了
+			for (auto i = props.begin(); i != props.end(); i++)
 			{
-				THUAI4::PropType Type = props[0]->propType;//获取道具类型
-				std::cout << int(Type) << std::endl;
-
-				for (int i = 0; i < 20; i++)//尝试捡20次
+				if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
 				{
-					g.Pick(props[0]->propType);
+					g.Pick((*i)->propType);
+				}
+				else//附近有道具,进行移动
+				{
+					gotoProps(g, wallinfo, selfPositionX, selfPositionY, (*i)->x, (*i)->y);
 				}
 			}
-			else//附近有道具,进行移动
-			{
-				gotoProps(g, wallinfo, selfPositionX, selfPositionY, propX, propY);
-			}
+			auto myproptype = selfinfo->propType;
 			switch (myproptype)
 			{
 			case THUAI4::PropType::Null:
 				break;
+			
 			case THUAI4::PropType::JinKeLa:
 			case THUAI4::PropType::Rice:
 			case THUAI4::PropType::NegativeFeedback:
@@ -361,10 +360,11 @@ void AI::play(GameApi& g)
 			case THUAI4::PropType::Divider:
 				g.Use();
 				break;
+
 			default:
 				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
 				auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
-				g.Throw(propDistance / 8, propDirection);
+				g.Throw(propDistance / 8, propDirection);//8000是任意一个人物扔道具的速度
 				break;
 			}
 		}
