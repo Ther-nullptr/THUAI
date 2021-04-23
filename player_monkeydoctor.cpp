@@ -6,6 +6,7 @@ extern const bool asynchronous = false;
 
 #include <random>
 #include <iostream>
+#include <string>
 #include <cmath>
 
 /* 请于 VS2019 项目属性中开启 C++17 标准：/std:c++17 */
@@ -43,6 +44,7 @@ uint32_t Mhp;//健康值 //TODO
 uint16_t MbulletNum;//子弹数
 uint32_t MselfPositionX;
 uint32_t MselfPositionY;//自身坐标
+int cellX, cellY;
 double Mmovedirection;
 bool Misdying;//人物是否死亡
 
@@ -58,6 +60,15 @@ uint32_t enemyPositionX, enemyPositionY, enemyHP;
 //障碍物信息
 uint32_t wallx;
 uint32_t wally;
+
+//常量控制
+static bool sendFlag=1;
+
+//获取方格坐标
+inline uint32_t getCellPosition(uint32_t t)
+{
+	return t / CELL;
+}
 
 //计算角度函数
 inline double getDirection(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint32_t aimPositionX, uint32_t aimPositionY)
@@ -78,6 +89,14 @@ inline double getDistance(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint
 	return sqrt((aimPositionX - selfPoisitionX) * (aimPositionX - selfPoisitionX) + (aimPositionY - selfPoisitionY) * (aimPositionY - selfPoisitionY));
 }
 
+//计算两个坐标是否属于同一个cell
+inline bool areSameCell(uint32_t n1, uint32_t n2)
+{
+	bool condition1 = ((int(n1) - int(n2)) < 1000);
+	bool condition2 = ((int(n2) - int(n1)) < 1000);
+	return (condition1 && condition2);
+}
+
 void AI::play(GameApi& g)
 {
 	//个人信息获取
@@ -86,14 +105,35 @@ void AI::play(GameApi& g)
 	MselfPositionX = self->x;
 	MselfPositionY = self->y;
 	MmyID = self->teamID;
+	std::cout << "proptype:" << int(self->propType) << std::endl;
 
 	//猴子对道具的拾取
 	auto props = g.GetProps();
 	if (props.size() != 0)
 	{
-		g.Pick(props[0]->propType);
+		MselfPositionX = self->x;
+		MselfPositionY = self->y;
+		cellX = getCellPosition(MselfPositionX);
+		cellY = getCellPosition(MselfPositionY);
+		for (auto i = props.begin(); i != props.end(); i++)
+		{
+			if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
+			{
+				g.Pick((*i)->propType);
+			}
+		}
 	}
-	g.Use();
+	if (int(self->propType) != 0)
+	{
+		g.Use();
+	}
+
+	//发送自己的坐标
+	if (sendFlag)
+	{
+		g.Send(1, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
+		//g.Send(3, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
+	}
 
 	//队友发来的信息获取
 	std::string buffer("empty");
@@ -144,7 +184,6 @@ void AI::play(GameApi& g)
 		if (MbulletNum > 1 && rivalchp > 0)
 		{
 			g.Attack(attackdistance / MbulletSpeed, attackangle);
-			//rivalchp -= 3000;
 		}
 	}
 
