@@ -297,22 +297,18 @@ void AI::play(GameApi& g)
 			selfPositionY = selfinfo->y;
 			cellX = getCellPosition(selfPositionX);
 			cellY = getCellPosition(selfPositionY);
-			uint32_t propX = props[0]->x, propY = props[0]->y;// 先捡一个,不要贪多
-			std::cout << propX << ' ' << propY << std::endl;
-			if ((cellX == getCellPosition(propX)) && (cellY == getCellPosition(propY)))//如果就在脚下,直接捡起来就好了
+			for (auto i = props.begin(); i != props.end(); i++)
 			{
-				THUAI4::PropType Type = props[0]->propType;//获取道具类型
-				std::cout << int(Type) << std::endl;
-				for (int i = 0; i < 20; i++)//尝试捡20次
+				if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
 				{
-					g.Pick(props[0]->propType);
+					g.Pick((*i)->propType);
+				}
+				else//附近有道具,进行移动
+				{
+					gotoProps(g, wallinfo, selfPositionX, selfPositionY, (*i)->x,(*i)->y);
 				}
 			}
-			else//附近有道具,进行移动
-			{
-				gotoProps(g, wallinfo, selfPositionX, selfPositionY, propX, propY);
-			}
-			if (myproptype != THUAI4::PropType::Null)
+			if (int(selfinfo->propType)!=0)
 			{
 				g.Use();
 			}
@@ -398,8 +394,23 @@ void AI::play(GameApi& g)
 					bulletDirection = (*i)->facingDirection;
 					std::cout << bulletDirection << std::endl;
 					characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
-					characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
-					g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
+					if (bulletDirection <= PI)//向垂直方向躲子弹
+					{
+						if (fabs(bulletDirection + PI - characterBulletDirection) <= PI * 0.1)
+						{
+							std::cout << "escape!" << std::endl;
+							g.MovePlayer(MOVETIME_ESCAPE, PI / 2 + bulletDirection);
+						}
+					}
+					else
+					{
+						if (fabs(bulletDirection - PI - characterBulletDirection) <= PI * 0.1)
+						{
+							std::cout << "escape!" << std::endl;
+							g.MovePlayer(MOVETIME_ESCAPE, bulletDirection - PI * 0.5);
+						}
+					}
+					
 				}
 			}
 		}
