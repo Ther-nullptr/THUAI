@@ -2,12 +2,14 @@
 #include "Constants.h"
 #define PI  3.1415926
 //为假则play()调用期间游戏状态更新阻塞，为真则只保证当前游戏状态不会被状态更新函数与GameApi的方法同时访问
-extern const bool asynchronous = false;
+extern const bool asynchronous = true;
 
 #include <random>
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <fstream>
+#include <chrono>
 
 /* 请于 VS2019 项目属性中开启 C++17 标准：/std:c++17 */
 
@@ -34,8 +36,7 @@ namespace
 #define BULLET_ATTACK 700 //攻击时子弹的飞行速度
 #define BULLET_COLOR 200 //染色时子弹的飞行速度
 
-#define BIRTHPOINTX 2500
-#define BIRTHPOINTY 3500//猴子的出生点(实际上以后猴子就不会动了)
+//#define FILEMODE
 
 //个人信息
 static uint16_t MmyID;//ID
@@ -46,13 +47,16 @@ uint32_t MselfPositionX;
 uint32_t MselfPositionY;//自身坐标
 int cellX, cellY;
 double Mmovedirection;
-bool Misdying;//人物是否死亡
+bool Misdying=0;//人物是否死亡
+bool Mlastisdying;
+static auto sec = std::chrono::duration_cast<std::chrono::seconds>
+(std::chrono::system_clock::now().time_since_epoch()).count();// 计时用
 
 //子弹信息
 const uint32_t MbulletSpeed = 24;
 uint32_t bulletPositionX;
 uint32_t bulletPositionY;
-double bulletDirection, characterBulletDirection,characterBulletDistance, shootDirection, shootPosition;
+double bulletDirection, characterBulletDirection, characterBulletDistance, shootDirection, shootPosition;
 
 //敌人信息
 uint32_t enemyPositionX, enemyPositionY, enemyHP;
@@ -62,7 +66,11 @@ uint32_t wallx;
 uint32_t wally;
 
 //常量控制
-static bool sendFlag=1;
+static bool sendFlag = 1;
+
+#ifdef FILEMODE
+std::ofstream fout("C:\\Users\\86181\\Desktop\\game1.txt");
+#endif // FILEMODE
 
 //获取方格坐标
 inline uint32_t getCellPosition(uint32_t t)
@@ -89,23 +97,27 @@ inline double getDistance(uint32_t selfPoisitionX, uint32_t selfPoisitionY, uint
 	return sqrt((aimPositionX - selfPoisitionX) * (aimPositionX - selfPoisitionX) + (aimPositionY - selfPoisitionY) * (aimPositionY - selfPoisitionY));
 }
 
-//计算两个坐标是否属于同一个cell
-inline bool areSameCell(uint32_t n1, uint32_t n2)
-{
-	bool condition1 = ((int(n1) - int(n2)) < 1000);
-	bool condition2 = ((int(n2) - int(n1)) < 1000);
-	return (condition1 && condition2);
-}
-
 void AI::play(GameApi& g)
 {
+
 	//个人信息获取
+	Mlastisdying = Misdying;
 	auto self = g.GetSelfInfo();
 	MbulletNum = self->bulletNum;
 	MselfPositionX = self->x;
 	MselfPositionY = self->y;
+	Misdying = self->isDying;
 	MmyID = self->teamID;
-	std::cout << "proptype:" << int(self->propType) << std::endl;
+
+#ifdef FILEMODE
+	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
+		(std::chrono::system_clock::now().time_since_epoch()).count();
+	auto time = sec1 - sec;
+	if (Misdying && Mlastisdying != Misdying)
+	{
+		fout << "MonkeyDoctor has been slained at " << time << " s\n";
+	}
+#endif // FILEMODE
 
 	//猴子对道具的拾取
 	auto props = g.GetProps();
@@ -129,10 +141,10 @@ void AI::play(GameApi& g)
 	}
 
 	//发送自己的坐标
-	if (sendFlag)
+	if (sendFlag)//这里应该可以优化,但是保险起见就一直发吧
 	{
-		g.Send(1, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
-		//g.Send(3, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
+		g.Send(2, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
+		g.Send(3, std::to_string(MselfPositionX) + ',' + std::to_string(MselfPositionY));
 	}
 
 	//队友发来的信息获取
@@ -141,7 +153,7 @@ void AI::play(GameApi& g)
 	int rivalx = 0, rivaly = 0, rivalchp = 0;
 	if (g.MessageAvailable())
 	{
-		if (g.TryGetMessage(buffer))
+		if (g.TryGetMessage(buffer))//获取敌方的坐标值、生命值
 		{
 			int flag = 0;
 			for (std::string::size_type i = 0; i != buffer.size(); i++)
@@ -169,10 +181,6 @@ void AI::play(GameApi& g)
 			}
 			whethershoot = true;
 		}
-		else
-		{
-			std::cout << " cannot get message" << std::endl;
-		}
 	}
 
 	//猴子的打击
@@ -180,14 +188,16 @@ void AI::play(GameApi& g)
 	{
 		double attackangle = getDirection(MselfPositionX, MselfPositionY, rivalx, rivaly);
 		double attackdistance = getDistance(MselfPositionX, MselfPositionY, rivalx, rivaly);
-		std::cout << attackangle << ' ' << attackdistance << std::endl;
 		if (MbulletNum > 1 && rivalchp > 0)
 		{
 			g.Attack(attackdistance / MbulletSpeed, attackangle);
+#ifdef FILEMODE
+			fout << "MonkeyDoctor is attacking at "<<time<<" s\n";
+#endif // FILEMODE
 		}
 	}
 
-	//猴子遇到敌人时的决策
+	//猴子遇到子弹时的决策
 	auto bullets = g.GetBullets();
 	if (bullets.size() != 0)
 	{
@@ -199,7 +209,7 @@ void AI::play(GameApi& g)
 				bulletPositionY = (*i)->y;
 				characterBulletDirection = getDirection(MselfPositionX, MselfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
 				characterBulletDistance = getDistance(MselfPositionX, MselfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
-				if (MbulletNum >= 3)//对子弹进行拦截
+				if (MbulletNum >= 2)//对子弹进行拦截
 				{
 					g.Attack(characterBulletDistance / MbulletSpeed, characterBulletDirection);
 				}
@@ -222,16 +232,10 @@ void AI::play(GameApi& g)
 				enemyHP = (*i)->hp;
 				shootDirection = getDirection(MselfPositionX, MselfPositionY, enemyPositionX, enemyPositionY);
 				shootPosition = getDistance(MselfPositionX, MselfPositionY, enemyPositionX, enemyPositionY);
-				if (enemyHP <= 2 * 3000)//残血敌人一击必杀
-				{
-					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
-					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
-				}
-				else//如果不能一击必杀,就打消耗战
-				{
-					g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
-				}
+				g.Attack(shootPosition / MbulletSpeed, shootDirection);//向指定方向发起进攻
 			}
 		}
 	}
+
+
 }
