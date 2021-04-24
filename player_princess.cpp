@@ -10,6 +10,7 @@ extern const bool asynchronous = true;
 #include <chrono>
 #include <string>
 #include <cmath>
+#include <fstream>
 
 #define PI 3.1415926
 #define CELL 1000 //网格尺寸
@@ -30,6 +31,7 @@ extern const bool asynchronous = true;
 
 #define MOVEMODE1//这里可以改变行走模式(MOVEMODE1,MOVEMODE2)
 #define ATTACKMODE1
+//#define FILEMODE
 
 /* 请于 VS2019 项目属性中开启 C++17 标准：/std:c++17 */
 
@@ -62,23 +64,29 @@ uint32_t selfPositionY;//自身坐标
 uint32_t attackforce;//自身攻击力//TODO
 uint32_t movespeed;//自身移动速度//TODO
 static THUAI4::ColorType color;//返回本队的颜色
-bool isdying;//人物是否死亡
+bool isdying = 0;//人物是否死亡
+bool lastisdying;
 
 //其他玩家信息
 uint32_t enemyPositionX, enemyPositionY, enemyHP, teammatePositionX, teammatePositionY;
-double shootDirection, shootDistance,teammateDirection;
+double shootDirection, shootDistance, teammateDirection;
 
 //子弹信息
 uint32_t bulletPositionX, bulletPositionY;
-double bulletDirection, characterBulletDirection,characterBulletDistance;
+double bulletDirection, characterBulletDirection, characterBulletDistance;
 
 //地图信息
-uint32_t cellX, cellY, wallX, wallY, birthpointX, birthpointY, myteamCellX, myteamCellY;
+uint32_t cellX, cellY, wallX, wallY, birthpointX, birthpointY;
 THUAI4::ColorType cellColor;
 static bool wallinfo[50][50] = { 0 };//用数组存储墙的信息
 
 //分数信息
 uint32_t score;
+
+#ifdef FILEMODE
+std::ofstream fout("C:\\Users\\86181\\Desktop\\game3.txt");
+#endif // FILEMODE
+
 
 #ifdef MOVEMODE2
 enum class mydirection
@@ -175,7 +183,7 @@ inline void gotoProps(GameApi& g, bool wallinfo[50][50], uint32_t selfPositionX,
 	}
 	if (moveflag)
 	{
-		gotoxy(g, selfPositionX, selfPositionY, PropX, PropY,movespeed);
+		gotoxy(g, selfPositionX, selfPositionY, PropX, PropY, movespeed);
 	}
 label:;
 }
@@ -255,545 +263,551 @@ void AI::play(GameApi& g)
 					}
 				}
 			}
-			std::cout << "MONKEY:" << MONKEYX << ',' << MONKEYY << std::endl;
 		}
-		else
-			std::cout << "cannot get message2" << std::endl;
 	}
 
-	// 计时
-	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
-		(std::chrono::system_clock::now().time_since_epoch()).count();
-	auto time = sec1 - sec;
-	std::cout << time << std::endl;
+	// 获取自身信息部分,供之后决策判断
+	lastisdying = isdying;
+	auto selfinfo = g.GetSelfInfo();
+	myID = selfinfo->teamID;
+	lifeNum = selfinfo->lifeNum;//获取生命数 //TODO
+	hp = selfinfo->hp;//获取健康值 //TODO
+	bulletNum = selfinfo->bulletNum;//获取子弹数
+	selfPositionX = selfinfo->x;
+	selfPositionY = selfinfo->y;//获取自身坐标
+	isdying = selfinfo->isDying;
+	attackforce = selfinfo->ap;
+	movespeed = selfinfo->moveSpeed;
+	myGUID = selfinfo->guid;
+	auto color = g.GetSelfTeamColor();//返回本队的颜色
+	
+	// 便于监测,后续可以删掉
+	std::cout << selfPositionX << ' ' << selfPositionY << std::endl;
+	std::cout << bulletNum << std::endl;
 
-	//这个时间条件方便将自己所控制的玩家移动到指定位置,实际应用时会删掉
-	if (time > 15)
+	//出生点是一个比较尴尬的地方,会给判定造成"难以琢磨的问题",因此我们选择让玩家在出生后先离开出生点再进行其他判定操作
+	if (startFlag)
 	{
-		// 获取自身信息部分,供之后决策判断
-		auto selfinfo = g.GetSelfInfo();
-		myID = selfinfo->teamID;
-		lifeNum = selfinfo->lifeNum;//获取生命数 //TODO
-		hp = selfinfo->hp;//获取健康值 //TODO
-		bulletNum = selfinfo->bulletNum;//获取子弹数
-		selfPositionX = selfinfo->x;
-		selfPositionY = selfinfo->y;//获取自身坐标
-		isdying = selfinfo->isDying;
-		attackforce = selfinfo->ap;
-		movespeed = selfinfo->moveSpeed;
-		myGUID = selfinfo->guid;
-		auto myproptype = selfinfo->propType;
-		auto color = g.GetSelfTeamColor();//返回本队的颜色
-
-		// 便于监测,后续可以删掉
-		std::cout << selfPositionX << ' ' << selfPositionY << std::endl;
-		std::cout << bulletNum << std::endl;
-
-		//出生点是一个比较尴尬的地方,会给判定造成"难以琢磨的问题",因此我们选择让玩家在出生后先离开出生点再进行其他判定操作
-		if (startFlag)
+		if (getCellPosition(selfPositionX) == BIRTHPOINT1)
 		{
-			if (getCellPosition(selfPositionX) == BIRTHPOINT1)
-			{
-				g.MoveDown(MOVETIME_BIRTHPOINTS);
-			}
-			else if (getCellPosition(selfPositionX) == BIRTHPOINT2)
-			{
-				g.MoveUp(MOVETIME_BIRTHPOINTS);
-			}
-			else if (getCellPosition(selfPositionY) == BIRTHPOINT1)
-			{
-				g.MoveRight(MOVETIME_BIRTHPOINTS);
-			}
-			else if (getCellPosition(selfPositionY) == BIRTHPOINT2)
-			{
-				g.MoveLeft(MOVETIME_BIRTHPOINTS);
-			}
-			startFlag = 0;
+			g.MoveDown(MOVETIME_BIRTHPOINTS);
 		}
-		//如果玩家被击杀,将这几个标志值重置为默认状态
-		if (isdying)
+		else if (getCellPosition(selfPositionX) == BIRTHPOINT2)
 		{
-			startFlag = 1;
-			move_to_left = 0;
-			move_to_up = 0;
+			g.MoveUp(MOVETIME_BIRTHPOINTS);
 		}
-
-		// 获取周围道具的坐标,并移动(小步拿道具)
-		auto props = g.GetProps();
-		bool wallFlag = 1;
-		if (props.size() != 0)
+		else if (getCellPosition(selfPositionY) == BIRTHPOINT1)
 		{
-			selfPositionX = selfinfo->x;
-			selfPositionY = selfinfo->y;
-			cellX = getCellPosition(selfPositionX);
-			cellY = getCellPosition(selfPositionY);
-			for (auto i = props.begin(); i != props.end(); i++)
-			{
-				if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
-				{
-					g.Pick((*i)->propType);
-				}
-				else//附近有道具,进行移动
-				{
-					gotoProps(g, wallinfo, selfPositionX, selfPositionY, (*i)->x, (*i)->y);
-				}
-			}
-			auto myproptype = selfinfo->propType;
-			switch (myproptype)
-			{
-			case THUAI4::PropType::Null:
-				break;
-
-			case THUAI4::PropType::Rice:
-			case THUAI4::PropType::NegativeFeedback:
-			case THUAI4::PropType::Totem:
-			case THUAI4::PropType::Dirt:
-			case THUAI4::PropType::Attenuator:
-			case THUAI4::PropType::Divider:
-				g.Use();
-				break;
-
-			default:
-				auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
-				auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
-				g.Throw(propDistance / 8, propDirection);
-				break;
-			}
+			g.MoveRight(MOVETIME_BIRTHPOINTS);
 		}
-
-		// 获取周围玩家的坐标,并做出决策
-		auto characters = g.GetCharacters();
-		if (characters.size() > 1)//如果周围除自己以外还有人
+		else if (getCellPosition(selfPositionY) == BIRTHPOINT2)
 		{
-			for (auto i = characters.begin(); i != characters.end(); i++)
-			{
-				selfPositionX = selfinfo->x;
-				selfPositionY = selfinfo->y;
-				if ((*i)->teamID != myID)//发现敌军
-				{
-					enemyPositionX = (*i)->x;
-					enemyPositionY = (*i)->y;
-					enemyHP = (*i)->hp;
-					//g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
-					shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
-#ifdef ATTACKMODE1
-					if (enemyHP <= 3 * attackforce)//残血敌人一击必杀
-					{
-						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
-						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
-						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
-					}
-					else//如果不能一击必杀,就打消耗战
-					{
-						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
-					}
-					g.MovePlayer(MOVETIME_ESCAPE / 4, shootDirection);//追着敌人打
-					if (hp < 2000)//这种状态下可以判定AI即将被击杀,那么AI会将所有的子弹射出
-					{
-						//这段代码有风险!!
-						while (bulletNum > 0)
-						{
-							g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
-							bulletNum--;
-						}
-					}
-#endif // ATTACKMODE1
-
-#ifdef ATTACKMODE2
-					for (int i = 0; i <= ememyHp / 1000; i++)
-					{
-						g.Attack(BULLET_ATTACK, shootDirection);
-					}
-#endif // ATTACKMODE2
-
-				}
-				else if ((*i)->guid != myGUID)
-				{//发现友军,也尽量远离,防止敌人一并歼灭或造成阻塞
-					teammatePositionX = (*i)->x;
-					teammatePositionY = (*i)->y;
-					if (getDistance(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY) <= 1.2 * CELL)
-					{
-						teammateDirection = getDirection(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY);
-						if (teammateDirection < PI)
-						{
-							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection + PI);
-						}
-						else
-						{
-							g.MovePlayer(MOVETIME_ESCAPE, teammateDirection - PI);
-						}
-					}
-				}
-			}
+			g.MoveLeft(MOVETIME_BIRTHPOINTS);
 		}
+		startFlag = 0;
+	}
+	//如果玩家被击杀,将这几个标志值重置为默认状态
+	if (isdying)
+	{
+		startFlag = 1;
+		move_to_left = 0;
+		move_to_up = 0;
+	}
 
-		//获取周围子弹信息,并躲避子弹
-		auto bullets = g.GetBullets();
-		if (bullets.size() != 0)
-		{
-			for (auto i = bullets.begin(); i != bullets.end(); i++)
-			{
-				selfPositionX = selfinfo->x;
-				selfPositionY = selfinfo->y;
-				if ((*i)->teamID != myID)//发现敌方子弹
-				{
-					bulletPositionX = (*i)->x;
-					bulletPositionY = (*i)->y;
-					bulletDirection = (*i)->facingDirection;
-					std::cout << bulletDirection << std::endl;
-					characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
-					characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
-					g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
-				}
-			}
-		}
-
-		//判断颜色,并涂色,补充子弹
+	// 获取周围道具的坐标,并移动(小步拿道具)
+	auto props = g.GetProps();
+	if (props.size() != 0)
+	{
 		selfPositionX = selfinfo->x;
 		selfPositionY = selfinfo->y;
 		cellX = getCellPosition(selfPositionX);
 		cellY = getCellPosition(selfPositionY);
-		bulletNum = selfinfo->bulletNum;
-		int uncoloredplaces = 0;
-		for (int i = getValidPosition(int(cellX - 2)); i <= getValidPosition(int(cellX + 2)); i++)
+		for (auto i = props.begin(); i != props.end(); i++)
 		{
-			for (int j = getValidPosition(int(cellY - 2)); j <= getValidPosition(int(cellY + 2)); j++)
+			if ((cellX == getCellPosition((*i)->x)) && (cellY == getCellPosition((*i)->y)))//如果就在脚下,直接捡起来就好了
 			{
-				cellColor = g.GetCellColor(i, j);
-				if (cellColor != color && wallinfo[i][j] != 1)//计数未被己方染色的地方(包括墙)
+				for (int j = 0; j < 40; j++)
 				{
-					uncoloredplaces++;
-				}
-				if (cellColor == color)
-				{
-					myteamCellX = i;
-					myteamCellY = j;
+					g.Pick((*i)->propType);
 				}
 			}
-		}
-		std::cout << uncoloredplaces << std::endl;
-		if ((uncoloredplaces >= 20 && bulletNum >= 7) || (uncoloredplaces >= 15 && bulletNum >= 11)||bulletNum>=13)//对子弹数量和未染色区域进行权衡
-		{
-#ifdef MOVEMODE2 
-			switch (d)
+			else//附近有道具,进行移动
 			{
-			case mydirection::right:
-				g.Attack(BULLET_COLOR, 0);
-				break;
-			case mydirection::down:
-				g.Attack(BULLET_COLOR, 1.5 * PI);
-				break;
-			case mydirection::left:
-				g.Attack(BULLET_COLOR, PI);
-				break;
-			case mydirection::up:
-				g.Attack(BULLET_COLOR, 0.5 * PI);
-				break;
+				gotoProps(g, wallinfo, selfPositionX, selfPositionY, (*i)->x, (*i)->y);
 			}
-#endif
-
-#ifdef MOVEMODE1
-			g.Attack(1, direction(e));
-#endif		
 		}
-		if (bulletNum < 4)//子弹不够,就去己方占领区补给
-		{
-			gotoProps(g, wallinfo,selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500);
-		}
+	}
+	auto proptype = selfinfo->propType;
+	switch (proptype)
+	{
+	case THUAI4::PropType::Null:
+		break;
 
+	case THUAI4::PropType::Rice:
+	case THUAI4::PropType::NegativeFeedback:
+	case THUAI4::PropType::Totem:
+	case THUAI4::PropType::Dirt:
+	case THUAI4::PropType::Attenuator:
+	case THUAI4::PropType::Divider:
+		g.Use();
+		break;
 
-		// 获取周围墙的坐标,并移动
-#ifdef MOVEMODE1
-		auto walls = g.GetWalls();
-		auto birthpoints = g.GetBirthPoints();//出生点也会阻塞玩家,与墙一视同仁
-		if (walls.size() != 0 || birthpoints.size() != 0)
+	default:
+		auto propDirection = getDirection(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
+		auto propDistance = getDistance(selfPositionX, selfPositionY, MONKEYX, MONKEYY);
+		g.Throw(propDistance / 8, propDirection);
+		break;
+	}
+
+	// 获取周围玩家的坐标,并做出决策
+	auto characters = g.GetCharacters();
+	if (characters.size() > 1)//如果周围除自己以外还有人
+	{
+		for (auto i = characters.begin(); i != characters.end(); i++)
 		{
 			selfPositionX = selfinfo->x;
 			selfPositionY = selfinfo->y;
-			if (getCellPosition(selfPositionY) <= MIN)//如果到了边界区,则改变方向移动的优先级
+			if ((*i)->teamID != myID)//发现敌军
 			{
+				enemyPositionX = (*i)->x;
+				enemyPositionY = (*i)->y;
+				enemyHP = (*i)->hp;
+				g.Send(1, std::to_string(enemyPositionX) + "," + std::to_string(enemyPositionY) + "," + std::to_string(enemyHP));
+				shootDirection = getDirection(selfPositionX, selfPositionY, enemyPositionX, enemyPositionY);
+#ifdef ATTACKMODE1
+				if (enemyHP <= 3 * attackforce)//残血敌人一击必杀
+				{
+					g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+					g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+					g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+				}
+				else//如果不能一击必杀,就打消耗战
+				{
+					g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+				}
+				g.MovePlayer(MOVETIME_ESCAPE, shootDirection);//追着敌人打
+				if (hp < 2000)//这种状态下可以判定AI即将被击杀,那么AI会将所有的子弹射出
+				{
+					//这段代码有风险!!
+					while (bulletNum > 0)
+					{
+						g.Attack(BULLET_ATTACK, shootDirection);//向指定方向发起进攻
+						bulletNum--;
+					}
+				}
+#endif // ATTACKMODE1
+
+#ifdef ATTACKMODE2
+				for (int i = 0; i <= ememyHp / 1000; i++)
+				{
+					g.Attack(BULLET_ATTACK, shootDirection);
+				}
+#endif // ATTACKMODE2
+
+			}
+			else if ((*i)->guid != myGUID)
+			{//发现友军,也尽量远离,防止敌人一并歼灭或造成阻塞
+				teammatePositionX = (*i)->x;
+				teammatePositionY = (*i)->y;
+				if (getDistance(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY) <= 1.2 * CELL)
+				{
+					teammateDirection = getDirection(selfPositionX, selfPositionY, teammatePositionX, teammatePositionY);
+					if (teammateDirection < PI)
+					{
+						g.MovePlayer(MOVETIME_ESCAPE, teammateDirection + PI);
+					}
+					else
+					{
+						g.MovePlayer(MOVETIME_ESCAPE, teammateDirection - PI);
+					}
+				}
+			}
+		}
+	}
+
+	//获取周围子弹信息,并躲避子弹
+	auto bullets = g.GetBullets();
+	if (bullets.size() != 0)
+	{
+		for (auto i = bullets.begin(); i != bullets.end(); i++)
+		{
+			selfPositionX = selfinfo->x;
+			selfPositionY = selfinfo->y;
+			if ((*i)->teamID != myID)//发现敌方子弹
+			{
+				bulletPositionX = (*i)->x;
+				bulletPositionY = (*i)->y;
+				bulletDirection = (*i)->facingDirection;
+				characterBulletDirection = getDirection(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的夹角
+				characterBulletDistance = getDistance(selfPositionX, selfPositionY, bulletPositionX, bulletPositionY);//计算人与子弹的距离
+				g.Attack(characterBulletDistance / BULLET_SPEED, characterBulletDirection);
+			}
+		}
+	}
+
+	//判断颜色,并涂色,补充子弹
+	selfPositionX = selfinfo->x;
+	selfPositionY = selfinfo->y;
+	cellX = getCellPosition(selfPositionX);
+	cellY = getCellPosition(selfPositionY);
+	bulletNum = selfinfo->bulletNum;
+	int uncoloredplaces = 0;
+	uint32_t myteamCellX = 0, myteamCellY = 0;
+	for (int i = getValidPosition(int(cellX - 2)); i <= getValidPosition(int(cellX + 2)); i++)
+	{
+		for (int j = getValidPosition(int(cellY - 2)); j <= getValidPosition(int(cellY + 2)); j++)
+		{
+			cellColor = g.GetCellColor(i, j);
+			if (cellColor != color && wallinfo[i][j] != 1)//计数未被己方染色的地方(包括墙)
+			{
+				uncoloredplaces++;
+			}
+			if (cellColor == color)
+			{
+				myteamCellX = i;
+				myteamCellY = j;
+			}
+		}
+	}
+	if ((uncoloredplaces >= 20 && bulletNum >= 5) || (uncoloredplaces >= 15 && bulletNum >= 11) || bulletNum >= 13)//对子弹数量和未染色区域进行权衡
+	{
+#ifdef MOVEMODE2 
+		switch (d)
+		{
+		case mydirection::right:
+			g.Attack(BULLET_COLOR, 0);
+			break;
+		case mydirection::down:
+			g.Attack(BULLET_COLOR, 1.5 * PI);
+			break;
+		case mydirection::left:
+			g.Attack(BULLET_COLOR, PI);
+			break;
+		case mydirection::up:
+			g.Attack(BULLET_COLOR, 0.5 * PI);
+			break;
+		}
+#endif
+
+#ifdef MOVEMODE1
+		g.Attack(1, direction(e));
+#endif		
+	}
+	if (bulletNum < 5)//子弹不够,就去己方占领区补给
+	{
+		if (myteamCellX != 0 && myteamCellY != 0)
+		{
+			gotoProps(g, wallinfo, selfPositionX, selfPositionY, myteamCellX * CELL + 500, myteamCellY * CELL + 500);
+		}
+		else
+		{
+			g.Attack(BULLET_COLOR, bulletDirection);
+		}
+	}
+
+
+	// 获取周围墙的坐标,并移动
+#ifdef MOVEMODE1
+	auto walls = g.GetWalls();
+	auto birthpoints = g.GetBirthPoints();//出生点也会阻塞玩家,与墙一视同仁
+	if (walls.size() != 0 || birthpoints.size() != 0)
+	{
+		selfPositionX = selfinfo->x;
+		selfPositionY = selfinfo->y;
+		if (getCellPosition(selfPositionY) <= MIN)//如果到了边界区,则改变方向移动的优先级
+		{
+			move_to_left = 0;
+		}
+		if (getCellPosition(selfPositionY) >= MAX)
+		{
+			move_to_left = 1;
+		}
+		if (getCellPosition(selfPositionX) <= MIN)
+		{
+			move_to_up = 0;
+		}
+		if (getCellPosition(selfPositionX) >= MAX)
+		{
+			move_to_up = 1;
+		}
+		bool right = 1;
+		bool left = 1;
+		bool up = 1;
+		bool down = 1;//标记特定方向上是否有墙的标志值
+		for (auto i = walls.begin(); i != walls.end(); i++)
+		{
+			wallX = (*i)->x;
+			wallY = (*i)->y;
+			wallinfo[getCellPosition(wallX)][getCellPosition(wallY)] = 1;//将墙的信息写入数组
+			if (left && areSameCell(selfPositionX, wallX) && areAdjacentCell(selfPositionY, wallY))
+			{
+				left = 0;
 				move_to_left = 0;
 			}
-			if (getCellPosition(selfPositionY) >= MAX)
+			if (right && areSameCell(selfPositionX, wallX) && areAdjacentCell(wallY, selfPositionY))
 			{
+				right = 0;
 				move_to_left = 1;
 			}
-			if (getCellPosition(selfPositionX) <= MIN)
+			if (up && areSameCell(selfPositionY, wallY) && areAdjacentCell(selfPositionX, wallX))
 			{
+				up = 0;
 				move_to_up = 0;
 			}
-			if (getCellPosition(selfPositionX) >= MAX)
+			if (down && areSameCell(selfPositionY, wallY) && areAdjacentCell(wallX, selfPositionX))
 			{
+				down = 0;
 				move_to_up = 1;
 			}
-			bool right = 1;
-			bool left = 1;
-			bool up = 1;
-			bool down = 1;//标记特定方向上是否有墙的标志值
-			for (auto i = walls.begin(); i != walls.end(); i++)
-			{
-				wallX = (*i)->x;
-				wallY = (*i)->y;
-				wallinfo[getCellPosition(wallX)][getCellPosition(wallY)] = 1;//将墙的信息写入数组
-				if (left && areSameCell(selfPositionX, wallX) && areAdjacentCell(selfPositionY, wallY))
-				{
-					left = 0;
-					move_to_left = 0;
-				}
-				if (right && areSameCell(selfPositionX, wallX) && areAdjacentCell(wallY, selfPositionY))
-				{
-					right = 0;
-					move_to_left = 1;
-				}
-				if (up && areSameCell(selfPositionY, wallY) && areAdjacentCell(selfPositionX, wallX))
-				{
-					up = 0;
-					move_to_up = 0;
-				}
-				if (down && areSameCell(selfPositionY, wallY) && areAdjacentCell(wallX, selfPositionX))
-				{
-					down = 0;
-					move_to_up = 1;
-				}
-			}
-			for (auto i = birthpoints.begin(); i != birthpoints.end(); i++)
-			{
-				birthpointX = (*i)->x;
-				birthpointY = (*i)->y;
-				wallinfo[getCellPosition(birthpointX)][getCellPosition(birthpointY)] = 1;//将墙的信息写入数组
-				if (left && areSameCell(selfPositionX, birthpointX) && areAdjacentCell(selfPositionY, birthpointY))
-				{
-					left = 0;
-					move_to_left = 0;
-				}
-				if (right && areSameCell(selfPositionX, birthpointX) && areAdjacentCell(birthpointY, selfPositionY))
-				{
-					right = 0;
-					move_to_left = 1;
-				}
-				if (up && areSameCell(selfPositionY, birthpointY) && areAdjacentCell(selfPositionX, birthpointX))
-				{
-					up = 0;
-					move_to_up = 0;
-				}
-				if (down && areSameCell(selfPositionY, birthpointY) && areAdjacentCell(birthpointX, selfPositionX))
-				{
-					down = 0;
-					move_to_up = 1;
-				}
-			}
-			std::cout << right << left << down << up << std::endl;
-			directionValue = right + left + down + up;
-			if (!move_to_left && !move_to_up)
-			{
-				if (directionFlag < 5)
-				{
-					if (right)
-					{
-						g.MoveRight(MOVETIME_WALLS);
-					}
-					else if (left)
-					{
-						g.MoveLeft(MOVETIME_WALLS);
-					}
-				}
-				else
-				{
-					if (down)
-					{
-						g.MoveDown(MOVETIME_WALLS);
-					}
-					else if (up)
-					{
-						g.MoveUp(MOVETIME_WALLS);
-					}
-				}
-			}
-			if (move_to_left && !move_to_up)
-			{
-				if (directionFlag < 5)
-				{
-					if (down)
-					{
-						g.MoveDown(MOVETIME_WALLS);
-					}
-					else if (up)
-					{
-						g.MoveUp(MOVETIME_WALLS);
-					}
-				}
-				else
-				{
-					if (left)
-					{
-						g.MoveLeft(MOVETIME_WALLS);
-					}
-					else if (right)
-					{
-						g.MoveRight(MOVETIME_WALLS);
-					}
-				}
-			}
-			if (!move_to_left && move_to_up)
-			{
-				if (directionFlag < 5)
-				{
-					if (up)
-					{
-						g.MoveUp(MOVETIME_WALLS);
-					}
-					else if (down)
-					{
-						g.MoveDown(MOVETIME_WALLS);
-					}
-				}
-				else
-				{
-					if (right)
-					{
-						g.MoveRight(MOVETIME_WALLS);
-					}
-					else if (left)
-					{
-						g.MoveLeft(MOVETIME_WALLS);
-					}
-				}
-			}
-			if (move_to_left && move_to_up)
-			{
-				if (directionFlag < 5)
-				{
-					if (left)
-					{
-						g.MoveLeft(MOVETIME_WALLS);
-					}
-					else if (right)
-					{
-						g.MoveRight(MOVETIME_WALLS);
-					}
-				}
-				else
-				{
-					if (up)
-					{
-						g.MoveUp(MOVETIME_WALLS);
-					}
-					else if (down)
-					{
-						g.MoveDown(MOVETIME_WALLS);
-					}
-				}
-			}
 		}
-		else//没有墙时的移动策略
+		for (auto i = birthpoints.begin(); i != birthpoints.end(); i++)
 		{
-			moveWithoutWalls(g, move_to_left, move_to_up, directionFlag);
+			birthpointX = (*i)->x;
+			birthpointY = (*i)->y;
+			wallinfo[getCellPosition(birthpointX)][getCellPosition(birthpointY)] = 1;//将墙的信息写入数组
+			if (left && areSameCell(selfPositionX, birthpointX) && areAdjacentCell(selfPositionY, birthpointY))
+			{
+				left = 0;
+				move_to_left = 0;
+			}
+			if (right && areSameCell(selfPositionX, birthpointX) && areAdjacentCell(birthpointY, selfPositionY))
+			{
+				right = 0;
+				move_to_left = 1;
+			}
+			if (up && areSameCell(selfPositionY, birthpointY) && areAdjacentCell(selfPositionX, birthpointX))
+			{
+				up = 0;
+				move_to_up = 0;
+			}
+			if (down && areSameCell(selfPositionY, birthpointY) && areAdjacentCell(birthpointX, selfPositionX))
+			{
+				down = 0;
+				move_to_up = 1;
+			}
 		}
-		directionFlag++;
-		if (directionFlag == 10)//控制directionflag
+		std::cout << right << left << down << up << std::endl;
+		directionValue = right + left + down + up;
+		if (!move_to_left && !move_to_up)
 		{
-			directionFlag = 0;
+			if (directionFlag < 5)
+			{
+				if (right)
+				{
+					g.MoveRight(MOVETIME_WALLS);
+				}
+				else if (left)
+				{
+					g.MoveLeft(MOVETIME_WALLS);
+				}
+			}
+			else
+			{
+				if (down)
+				{
+					g.MoveDown(MOVETIME_WALLS);
+				}
+				else if (up)
+				{
+					g.MoveUp(MOVETIME_WALLS);
+				}
+			}
 		}
+		if (move_to_left && !move_to_up)
+		{
+			if (directionFlag < 5)
+			{
+				if (down)
+				{
+					g.MoveDown(MOVETIME_WALLS);
+				}
+				else if (up)
+				{
+					g.MoveUp(MOVETIME_WALLS);
+				}
+			}
+			else
+			{
+				if (left)
+				{
+					g.MoveLeft(MOVETIME_WALLS);
+				}
+				else if (right)
+				{
+					g.MoveRight(MOVETIME_WALLS);
+				}
+			}
+		}
+		if (!move_to_left && move_to_up)
+		{
+			if (directionFlag < 5)
+			{
+				if (up)
+				{
+					g.MoveUp(MOVETIME_WALLS);
+				}
+				else if (down)
+				{
+					g.MoveDown(MOVETIME_WALLS);
+				}
+			}
+			else
+			{
+				if (right)
+				{
+					g.MoveRight(MOVETIME_WALLS);
+				}
+				else if (left)
+				{
+					g.MoveLeft(MOVETIME_WALLS);
+				}
+			}
+		}
+		if (move_to_left && move_to_up)
+		{
+			if (directionFlag < 5)
+			{
+				if (left)
+				{
+					g.MoveLeft(MOVETIME_WALLS);
+				}
+				else if (right)
+				{
+					g.MoveRight(MOVETIME_WALLS);
+				}
+			}
+			else
+			{
+				if (up)
+				{
+					g.MoveUp(MOVETIME_WALLS);
+				}
+				else if (down)
+				{
+					g.MoveDown(MOVETIME_WALLS);
+				}
+			}
+		}
+	}
+	else//没有墙时的移动策略
+	{
+		moveWithoutWalls(g, move_to_left, move_to_up, directionFlag);
+	}
+	directionFlag++;
+	if (directionFlag == 10)//控制directionflag
+	{
+		directionFlag = 0;
+	}
 
 #endif
 
 #ifdef MOVEMODE2
 
-		auto walls = g.GetWalls();
-		auto birthpoints = g.GetBirthPoints();//出生点也会阻塞玩家,与墙一视同仁
-		if (walls.size() != 0 || birthpoints.size() != 0)
+	auto walls = g.GetWalls();
+	auto birthpoints = g.GetBirthPoints();//出生点也会阻塞玩家,与墙一视同仁
+	if (walls.size() != 0 || birthpoints.size() != 0)
+	{
+		selfPositionX = selfinfo->x;
+		selfPositionY = selfinfo->y;
+		for (auto i = walls.begin(); i != walls.end(); i++)
 		{
-			selfPositionX = selfinfo->x;
-			selfPositionY = selfinfo->y;
-			for (auto i = walls.begin(); i != walls.end(); i++)
+			wallX = (*i)->x;
+			wallY = (*i)->y;
+			wallinfo[getCellPosition(wallX)][getCellPosition(wallY)] = 1;
+		}
+		for (auto i = birthpoints.begin(); i != birthpoints.end(); i++)
+		{
+			birthpointX = (*i)->x;
+			birthpointY = (*i)->y;
+			wallinfo[getCellPosition(birthpointX)][getCellPosition(birthpointY)] = 1;
+		}
+		switch (d)
+		{
+		case mydirection::right:
+		{
+			g.MoveRight(MOVETIME_WALLS);
+			std::cout << "right" << std::endl;
+			for (auto i = selfPositionX - 0.5 * CELL; i <= selfPositionX + 0.5 * CELL; i += 0.5 * CELL)
 			{
-				wallX = (*i)->x;
-				wallY = (*i)->y;
-				wallinfo[getCellPosition(wallX)][getCellPosition(wallY)] = 1;
-			}
-			for (auto i = birthpoints.begin(); i != birthpoints.end(); i++)
-			{
-				birthpointX = (*i)->x;
-				birthpointY = (*i)->y;
-				wallinfo[getCellPosition(birthpointX)][getCellPosition(birthpointY)] = 1;
-			}
-			switch (d)
-			{
-			case mydirection::right:
-			{
-				g.MoveRight(MOVETIME_WALLS);
-				std::cout << "right" << std::endl;
-				for (auto i = selfPositionX - 0.5 * CELL; i <= selfPositionX + 0.5 * CELL; i += 0.5 * CELL)
+				if ((wallinfo[getCellPosition(i)][getCellPosition(selfPositionY) + 1] == 1) || getCellPosition(selfPositionY) >= MAX)
 				{
-					if ((wallinfo[getCellPosition(i)][getCellPosition(selfPositionY) + 1] == 1) || getCellPosition(selfPositionY) >= MAX)
-					{
-						d = mydirection::down;
-						break;
-					}
+					d = mydirection::down;
+					break;
 				}
-			}
-			break;
-			case mydirection::down:
-			{
-				std::cout << "down" << std::endl;
-				g.MoveDown(MOVETIME_WALLS);
-				for (auto i = selfPositionY - 0.5 * CELL; i <= selfPositionY + 0.5 * CELL; i += 0.5 * CELL)
-				{
-					if ((wallinfo[getCellPosition(selfPositionX) + 1][getCellPosition(i)] == 1) || getCellPosition(selfPositionX) >= MAX)
-					{
-						d = mydirection::left;
-						break;
-					}
-				}
-			}
-			break;
-			case mydirection::left:
-			{
-				std::cout << "left" << std::endl;
-				g.MoveLeft(MOVETIME_WALLS);
-				for (auto i = selfPositionX - 0.5 * CELL; i <= selfPositionX + 0.5 * CELL; i += 0.5 * CELL)
-				{
-					if ((wallinfo[getCellPosition(i)][getCellPosition(selfPositionY) - 1] == 1) || getCellPosition(selfPositionY) <= MIN)
-					{
-						d = mydirection::up;
-						break;
-					}
-				}
-			}
-			break;
-			case mydirection::up:
-			{
-				std::cout << "up" << std::endl;
-				g.MoveUp(MOVETIME_WALLS);
-				for (auto i = selfPositionY - 0.5 * CELL; i <= selfPositionY + 0.5 * CELL; i += 0.5 * CELL)
-				{
-					if ((wallinfo[getCellPosition(selfPositionX) - 1][getCellPosition(i)] == 1) || getCellPosition(selfPositionX) <= MAX)
-					{
-						d = mydirection::right;
-						break;
-					}
-				}
-			}
-			break;
 			}
 		}
-		else//没有墙时的移动策略
+		break;
+		case mydirection::down:
 		{
-			moveWithoutWalls(g, d);
+			std::cout << "down" << std::endl;
+			g.MoveDown(MOVETIME_WALLS);
+			for (auto i = selfPositionY - 0.5 * CELL; i <= selfPositionY + 0.5 * CELL; i += 0.5 * CELL)
+			{
+				if ((wallinfo[getCellPosition(selfPositionX) + 1][getCellPosition(i)] == 1) || getCellPosition(selfPositionX) >= MAX)
+				{
+					d = mydirection::left;
+					break;
+				}
+			}
 		}
-		directionFlag++;
-		if (directionFlag == 10)//控制directionflag
+		break;
+		case mydirection::left:
 		{
-			directionFlag = 0;
+			std::cout << "left" << std::endl;
+			g.MoveLeft(MOVETIME_WALLS);
+			for (auto i = selfPositionX - 0.5 * CELL; i <= selfPositionX + 0.5 * CELL; i += 0.5 * CELL)
+			{
+				if ((wallinfo[getCellPosition(i)][getCellPosition(selfPositionY) - 1] == 1) || getCellPosition(selfPositionY) <= MIN)
+				{
+					d = mydirection::up;
+					break;
+				}
+			}
 		}
+		break;
+		case mydirection::up:
+		{
+			std::cout << "up" << std::endl;
+			g.MoveUp(MOVETIME_WALLS);
+			for (auto i = selfPositionY - 0.5 * CELL; i <= selfPositionY + 0.5 * CELL; i += 0.5 * CELL)
+			{
+				if ((wallinfo[getCellPosition(selfPositionX) - 1][getCellPosition(i)] == 1) || getCellPosition(selfPositionX) <= MAX)
+				{
+					d = mydirection::right;
+					break;
+				}
+			}
+		}
+		break;
+		}
+	}
+	else//没有墙时的移动策略
+	{
+		moveWithoutWalls(g, d);
+	}
+	directionFlag++;
+	if (directionFlag == 10)//控制directionflag
+	{
+		directionFlag = 0;
+	}
 
 #endif MOVEMODE2
 
-		//信息观测部分
-		score = g.GetTeamScore();//返回本队当前分数
-		std::cout << "score:" << score << std::endl;
-	}
+	//信息观测部分
+	score = g.GetTeamScore();//返回本队当前分数
+	std::cout << "score:" << score << std::endl;
 
 	//清屏,可选
 	//system("cls");
+
+#ifdef FILEMODE
+	auto sec1 = std::chrono::duration_cast<std::chrono::seconds>
+		(std::chrono::system_clock::now().time_since_epoch()).count();
+	auto time = sec1 - sec;
+	if (isdying && lastisdying!=isdying)
+	{
+		fout << "PrincessIronMan has been slained at " << time << " s\n";
+	}
+#endif // FILEMODE
+
 }
